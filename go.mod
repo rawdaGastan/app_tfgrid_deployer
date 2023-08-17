@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/cosmos/go-bip39 v1.0.0
-	github.com/gliderlabs/ssh v0.3.5
 	github.com/hashicorp/go-envparse v0.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.30.0
@@ -17,7 +16,6 @@ require (
 
 require (
 	github.com/ChainSafe/go-schnorrkel v1.0.0 // indirect
-	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/centrifuge/go-substrate-rpc-client/v4 v4.0.12 // indirect
