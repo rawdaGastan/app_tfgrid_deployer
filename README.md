@@ -52,8 +52,6 @@ example `.env`:
 MNEMONIC="<your mnemonic here>"
 NETWORK="<the network you want to use (dev, qa, test, main)>"
 VM_NAME="<your vm name>"
-SSH_KEY="<your ssh key>"
-PRIVATE_KEY="<your private ssh key>"
 REPO_URL="<your repo url>"
 CONFIG_FILE_NAME="<your config file path that will be inserted in the repo>"
 BACKEND_DIR="<your backend directory name, make sure it has the same name as the backend docker image>"
