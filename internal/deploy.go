@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/tfgrid-sdk-go/grid-client/deployer"
@@ -31,6 +32,18 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	log.Debug().Msg("Getting user ssh keys")
+	sshKey, err := readFile(os.Getenv("HOME") + "/.ssh/id_rsa.pub")
+	if err != nil {
+		return err
+	}
+
+	privKey, err := readFile(os.Getenv("HOME") + "/.ssh/id_rsa")
+	if err != nil {
+		return err
+	}
+	privateKey := string(privKey)
 
 	nodeFilter := types.NodeFilter{
 		Status:  &statusUp,
@@ -81,7 +94,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 		Memory:     8 * 1024,
 		Entrypoint: "/sbin/zinit init",
 		EnvVars: map[string]string{
-			"SSH_KEY": d.configs.sshKey,
+			"SSH_KEY": string(sshKey),
 		},
 		Mounts: []workloads.Mount{
 			{DiskName: dataDisk.Name, MountPoint: "/mydata"},
@@ -112,6 +125,8 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	yggIP := outputVM.YggIP
 	log.Debug().Str("Yggdrasil IP", yggIP)
 
+	time.Sleep(20 * time.Second)
+
 	installDockerCmds := `apt update -y &&
 	apt install -y apt-transport-https ca-certificates curl software-properties-common &&
 	curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - &&
@@ -122,7 +137,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	zinit monitor dockerd`
 
 	log.Debug().Msg("Installing docker")
-	_, err = remoteRun("root", yggIP, installDockerCmds, d.configs.privateKey)
+	_, err = remoteRun("root", yggIP, installDockerCmds, privateKey)
 	if err != nil {
 		return err
 	}
@@ -134,13 +149,13 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	apt install -y caddy`
 
 	log.Debug().Msg("Installing caddy")
-	_, err = remoteRun("root", yggIP, installCaddyCmds, d.configs.privateKey)
+	_, err = remoteRun("root", yggIP, installCaddyCmds, privateKey)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Str("repository", d.configs.repoURL).Msg("Cloning the repository")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && git clone %s", d.configs.repoURL), d.configs.privateKey)
+	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && git clone %s", d.configs.repoURL), privateKey)
 	if err != nil {
 		return err
 	}
@@ -156,13 +171,14 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 			return err
 		}
 
-		_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/%s", repoConfig, repoName, filepath.Base(d.configs.configFilePath)), d.configs.privateKey)
+		_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/%s", repoConfig, repoName, filepath.Base(d.configs.configFilePath)), privateKey)
 		if err != nil {
 			return err
 		}
 	}
 
 	log.Debug().Msg("Inserting caddy script")
+	publicIP := strings.SplitN(outputVM.ComputedIP, "/", 2)[0]
 	caddyFileContent := fmt.Sprintf(`%s {
   route /v1/* {
            uri strip_prefix /*
@@ -172,22 +188,27 @@ func (d *Deployer) Deploy(ctx context.Context) error {
            uri strip_prefix /*
            reverse_proxy http://127.0.0.1:%d
         }
-}`, outputVM.ComputedIP, d.configs.backendPort, d.configs.frontendPort)
+}`, publicIP, d.configs.backendPort, d.configs.frontendPort)
 	log.Debug().Str("Caddy file content", caddyFileContent)
 
-	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/Caddyfile", caddyFileContent, repoName), d.configs.privateKey)
+	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/Caddyfile", caddyFileContent, repoName), privateKey)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Inserting caddy service into zinit")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "caddy run --d.configs=/mydata/%s/Caddyfile"' >> /etc/zinit/caddy.yaml && zinit monitor caddy`, repoName), d.configs.privateKey)
+	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "caddy run --d.configs=/mydata/%s/Caddyfile"' >> /etc/zinit/caddy.yaml && zinit monitor caddy`, repoName), privateKey)
+	if err != nil {
+		return err
+	}
+
+	err = d.Update(yggIP)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Str("repository service name", repoName).Msg("Inserting repository service into zinit")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "cd /mydata/%s && docker compose up --force-recreate"' >> /etc/zinit/%s.yaml && zinit monitor %s`, repoName, repoName, repoName), d.configs.privateKey)
+	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "cd /mydata/%s && docker compose up --force-recreate"' >> /etc/zinit/%s.yaml && zinit monitor %s`, repoName, repoName, repoName), privateKey)
 	if err != nil {
 		return err
 	}

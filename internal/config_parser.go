@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/cosmos/go-bip39"
-	"github.com/gliderlabs/ssh"
 	env "github.com/hashicorp/go-envparse"
 )
 
@@ -21,8 +20,6 @@ type config struct {
 	mnemonic       string
 	network        string
 	vmName         string
-	sshKey         string
-	privateKey     string
 	repoURL        string
 	configFilePath string
 	backendDir     string
@@ -70,16 +67,6 @@ func parseConfig(content string) (config, error) {
 				return config{}, fmt.Errorf("vm name '%s' is invalid", value)
 			}
 			cfg.vmName = value
-
-		case "SSH_KEY":
-			_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(value))
-			if err != nil {
-				return config{}, fmt.Errorf("ssh key '%s' is invalid", value)
-			}
-			cfg.sshKey = value
-
-		case "PRIVATE_KEY":
-			cfg.privateKey = value
 
 		case "REPO_URL":
 			_, err := url.ParseRequestURI(value)
@@ -131,10 +118,6 @@ func parseConfig(content string) (config, error) {
 		return config{}, fmt.Errorf("NETWORK is missing")
 	case cfg.vmName == "":
 		return config{}, fmt.Errorf("VM_NAME is missing")
-	case cfg.sshKey == "":
-		return config{}, fmt.Errorf("SSH_KEY is missing")
-	case cfg.privateKey == "":
-		return config{}, fmt.Errorf("PRIVATE_KEY is missing")
 	case cfg.repoURL == "":
 		return config{}, fmt.Errorf("REPO_URL is missing")
 	case cfg.configFilePath == "":
