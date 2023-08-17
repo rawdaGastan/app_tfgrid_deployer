@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -109,6 +110,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	}
 
 	yggIP := outputVM.YggIP
+	log.Debug().Str("Yggdrasil IP", yggIP)
 
 	installDockerCmds := `apt update -y &&
 	apt install -y apt-transport-https ca-certificates curl software-properties-common &&
@@ -146,25 +148,32 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	repoName := d.configs.repoURL[strings.LastIndex(d.configs.repoURL, "/")+1:]
 	log.Debug().Str("repository name", repoName).Send()
 
-	if len(d.configs.configFileName) != 0 {
-		log.Debug().Msg("Inserting repository d.configsuration file")
+	if len(d.configs.configFilePath) != 0 {
+		log.Debug().Msg("Inserting repository d.configuration file")
 
-		repoConfig, err := os.ReadFile(d.configs.configFileName)
+		repoConfig, err := os.ReadFile(d.configs.configFilePath)
 		if err != nil {
 			return err
 		}
 
-		_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/%s", repoConfig, repoName, d.configs.configFileName), d.configs.privateKey)
+		_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/%s", repoConfig, repoName, filepath.Base(d.configs.configFilePath)), d.configs.privateKey)
 		if err != nil {
 			return err
 		}
 	}
 
 	log.Debug().Msg("Inserting caddy script")
-	caddyFileContent, err := os.ReadFile("Caddyfile")
-	if err != nil {
-		return err
-	}
+	caddyFileContent := fmt.Sprintf(`%s {
+  route /v1/* {
+           uri strip_prefix /*
+           reverse_proxy http://127.0.0.1:%d
+        }
+  route /* {
+           uri strip_prefix /*
+           reverse_proxy http://127.0.0.1:%d
+        }
+}`, outputVM.ComputedIP, d.configs.backendPort, d.configs.frontendPort)
+	log.Debug().Str("Caddy file content", caddyFileContent)
 
 	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/Caddyfile", caddyFileContent, repoName), d.configs.privateKey)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/cosmos/go-bip39"
@@ -23,9 +24,11 @@ type config struct {
 	sshKey         string
 	privateKey     string
 	repoURL        string
-	configFileName string
+	configFilePath string
 	backendDir     string
 	frontendDir    string
+	backendPort    int
+	frontendPort   int
 }
 
 // ReadFile reads a file using its path and returns its content
@@ -85,14 +88,36 @@ func parseConfig(content string) (config, error) {
 			}
 			cfg.repoURL = value
 
-		case "CONFIG_FILE_NAME":
-			cfg.configFileName = value
+		case "CONFIG_FILE_PATH":
+			cfg.configFilePath = value
 
 		case "BACKEND_DIR":
 			cfg.backendDir = value
 
 		case "FRONTEND_DIR":
 			cfg.frontendDir = value
+
+		case "BACKEND_PORT":
+			backendPort, err := strconv.Atoi(value)
+			if err != nil {
+				return config{}, fmt.Errorf("backend port '%s' is invalid", value)
+			}
+
+			if backendPort < 1 || backendPort > 65535 {
+				return config{}, fmt.Errorf("port %d should be between 1-65535", backendPort)
+			}
+			cfg.backendPort = backendPort
+
+		case "FRONTEND_PORT":
+			frontendPort, err := strconv.Atoi(value)
+			if err != nil {
+				return config{}, fmt.Errorf("frontend port '%s' is invalid", value)
+			}
+
+			if frontendPort < 1 || frontendPort > 65535 {
+				return config{}, fmt.Errorf("port %d should be between 1-65535", frontendPort)
+			}
+			cfg.frontendPort = frontendPort
 
 		default:
 			return config{}, fmt.Errorf("key '%s' is invalid", key)
@@ -112,12 +137,16 @@ func parseConfig(content string) (config, error) {
 		return config{}, fmt.Errorf("PRIVATE_KEY is missing")
 	case cfg.repoURL == "":
 		return config{}, fmt.Errorf("REPO_URL is missing")
-	case cfg.configFileName == "":
+	case cfg.configFilePath == "":
 		return config{}, fmt.Errorf("CONFIG_FILE_NAME is missing")
 	case cfg.backendDir == "":
 		return config{}, fmt.Errorf("BACKEND_DIR is missing")
 	case cfg.frontendDir == "":
 		return config{}, fmt.Errorf("FRONTEND_DIR is missing")
+	case cfg.backendPort == 0:
+		return config{}, fmt.Errorf("BACKEND_PORT is missing")
+	case cfg.frontendPort == 0:
+		return config{}, fmt.Errorf("FRONTEND_PORT is missing")
 	}
 
 	return cfg, nil

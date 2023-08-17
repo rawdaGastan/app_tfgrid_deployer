@@ -10,8 +10,6 @@ import (
 var deployCmd = &cobra.Command{
 	Use:   "deploy",
 	Short: "deploy your app",
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
 		configFile, err := cmd.Flags().GetString("config")
 		if err != nil {
@@ -39,5 +37,6 @@ var deployCmd = &cobra.Command{
 }
 
 func init() {
-	deployCmd.Flags().StringP("config", "c", "", "Enter config file path")
+	rootCmd.AddCommand(deployCmd)
+	deployCmd.Flags().StringP("config", "c", ".env", "Enter config file path")
 }

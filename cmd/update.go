@@ -10,8 +10,6 @@ import (
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "update your app",
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
 		configFile, err := cmd.Flags().GetString("config")
 		if err != nil {
@@ -45,6 +43,7 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().StringP("config", "c", ".env", "Enter config file path")
 	updateCmd.Flags().StringP("ygg_ip", "y", "", "Enter your virtual machine's yggdrasil ip")
 }
