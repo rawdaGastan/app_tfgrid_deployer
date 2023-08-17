@@ -1,4 +1,4 @@
-# app_tfgrid_deployer
+# App_tfgrid_deployer
 
 <a href='https://github.com/jpoles1/gopherbadger' target='_blank'>![gopherbadger-tag-do-not-edit](https://img.shields.io/badge/Go%20Coverage-0%25-brightgreen.svg?longCache=true&style=flat)</a> [![Testing](https://github.com/rawdaGastan/app_tfgrid_deployer/actions/workflows/test.yml/badge.svg?branch=development)](https://github.com/rawdaGastan/app_tfgrid_deployer/actions/workflows/test.yml) [![Testing](https://github.com/rawdaGastan/app_tfgrid_deployer/actions/workflows/lint.yml/badge.svg?branch=development)](https://github.com/rawdaGastan/app_tfgrid_deployer/actions/workflows/lint.yml)
 

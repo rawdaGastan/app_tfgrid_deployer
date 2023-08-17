@@ -202,13 +202,13 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 		return err
 	}
 
-	err = d.Update(yggIP)
+	log.Debug().Str("repository service name", repoName).Msg("Inserting repository service into zinit")
+	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "cd /mydata/%s && docker compose up --force-recreate"' >> /etc/zinit/%s.yaml && zinit monitor %s`, repoName, repoName, repoName), privateKey)
 	if err != nil {
 		return err
 	}
 
-	log.Debug().Str("repository service name", repoName).Msg("Inserting repository service into zinit")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "cd /mydata/%s && docker compose up --force-recreate"' >> /etc/zinit/%s.yaml && zinit monitor %s`, repoName, repoName, repoName), privateKey)
+	err = d.Update(yggIP)
 	if err != nil {
 		return err
 	}
