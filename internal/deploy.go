@@ -197,7 +197,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	}
 
 	log.Debug().Msg("Inserting caddy service into zinit")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "caddy run --d.configs=/mydata/%s/Caddyfile"' >> /etc/zinit/caddy.yaml && zinit monitor caddy`, repoName), privateKey)
+	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "caddy run --config=/mydata/%s/Caddyfile"' >> /etc/zinit/caddy.yaml && zinit monitor caddy`, repoName), privateKey)
 	if err != nil {
 		return err
 	}
