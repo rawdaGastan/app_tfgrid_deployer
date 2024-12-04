@@ -13,13 +13,12 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/tfgrid-sdk-go/grid-client/deployer"
 	"github.com/threefoldtech/tfgrid-sdk-go/grid-client/workloads"
+	"github.com/threefoldtech/tfgrid-sdk-go/grid-client/zos"
 	"github.com/threefoldtech/tfgrid-sdk-go/grid-proxy/pkg/types"
-	"github.com/threefoldtech/zos/pkg/gridtypes"
 )
 
 func (d *Deployer) Deploy(ctx context.Context) error {
 	statusUp := "up"
-	falseVal := true
 	trueVal := true
 	oneVal := uint64(1)
 	memoryGB := uint64(8)
@@ -28,7 +27,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	minRootfs := *convertGBToBytes(2)
 
 	log.Debug().Str("mnemonics", d.configs.mnemonic).Str("network", d.configs.network).Msg("Initializing threefold plugin client...")
-	tfPluginClient, err := deployer.NewTFPluginClient(d.configs.mnemonic, "sr25519", d.configs.network, "", "", "", 0, false)
+	tfPluginClient, err := deployer.NewTFPluginClient(d.configs.mnemonic, deployer.WithNetwork(d.configs.network))
 	if err != nil {
 		return err
 	}
@@ -46,11 +45,10 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	privateKey := string(privKey)
 
 	nodeFilter := types.NodeFilter{
-		Status:  &statusUp,
+		Status:  []string{statusUp},
 		FreeSRU: convertGBToBytes(diskGB * 2),
 		FreeMRU: convertGBToBytes(memoryGB),
 		FarmIDs: []uint64{farmID},
-		Rented:  &falseVal,
 		FreeIPs: &oneVal,
 		IPv4:    &trueVal,
 	}
@@ -64,15 +62,21 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	nodeID := uint32(nodes[0].NodeID)
 	log.Debug().Uint32("node ID", nodeID).Msg("Node is found")
 
+	myceliumKey, err := workloads.RandomMyceliumKey()
+	if err != nil {
+		return err
+	}
+
 	net := workloads.ZNet{
 		Name:        fmt.Sprintf("network_%s", d.configs.vmName),
 		Description: "network for deployment",
 		Nodes:       []uint32{nodeID},
-		IPRange: gridtypes.NewIPNet(net.IPNet{
+		IPRange: zos.IPNet{IPNet: net.IPNet{
 			IP:   net.IPv4(10, 20, 0, 0),
 			Mask: net.CIDRMask(16, 32),
-		}),
-		AddWGAccess: false,
+		}},
+		AddWGAccess:  false,
+		MyceliumKeys: map[uint32][]byte{nodeID: myceliumKey},
 	}
 
 	dataDisk := workloads.Disk{
@@ -85,22 +89,29 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 		SizeGB: 50,
 	}
 
+	myceliumIPSeed, err := workloads.RandomMyceliumIPSeed()
+	if err != nil {
+		return err
+	}
+
 	vm := workloads.VM{
 		Name:       d.configs.vmName,
+		NodeID:     nodeID,
 		Flist:      "https://hub.grid.tf/tf-official-apps/threefoldtech-ubuntu-22.04.flist",
 		CPU:        4,
 		PublicIP:   true,
 		Planetary:  true,
-		Memory:     8 * 1024,
+		MemoryMB:   8 * 1024,
 		Entrypoint: "/sbin/zinit init",
 		EnvVars: map[string]string{
 			"SSH_KEY": string(sshKey),
 		},
 		Mounts: []workloads.Mount{
-			{DiskName: dataDisk.Name, MountPoint: "/mydata"},
-			{DiskName: dockerDisk.Name, MountPoint: "/var/lib/docker"},
+			{Name: dataDisk.Name, MountPoint: "/mydata"},
+			{Name: dockerDisk.Name, MountPoint: "/var/lib/docker"},
 		},
-		NetworkName: net.Name,
+		NetworkName:    net.Name,
+		MyceliumIPSeed: myceliumIPSeed,
 	}
 
 	log.Debug().Str("Network", net.Name).Msg("Deploying network")
@@ -110,20 +121,20 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	}
 
 	log.Debug().Str("VM", vm.Name).Msg("Deploying virtual machine")
-	dl := workloads.NewDeployment(d.configs.vmName, nodeID, "", nil, net.Name, []workloads.Disk{dataDisk, dockerDisk}, nil, []workloads.VM{vm}, nil)
+	dl := workloads.NewDeployment(d.configs.vmName, nodeID, "", nil, net.Name, []workloads.Disk{dataDisk, dockerDisk}, nil, []workloads.VM{vm}, nil, nil, nil)
 	err = tfPluginClient.DeploymentDeployer.Deploy(ctx, &dl)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Str("VM", d.configs.vmName).Msg("Loading virtual machine")
-	outputVM, err := tfPluginClient.State.LoadVMFromGrid(nodeID, vm.Name, dl.Name)
+	outputVM, err := tfPluginClient.State.LoadVMFromGrid(ctx, nodeID, vm.Name, dl.Name)
 	if err != nil {
 		return err
 	}
 
-	yggIP := outputVM.YggIP
-	log.Debug().Str("Yggdrasil IP", yggIP)
+	myceliumIP := outputVM.MyceliumIP
+	log.Debug().Str("Mycelium IP", myceliumIP)
 
 	time.Sleep(20 * time.Second)
 
@@ -137,7 +148,7 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	zinit monitor dockerd`
 
 	log.Debug().Msg("Installing docker")
-	_, err = remoteRun("root", yggIP, installDockerCmds, privateKey)
+	_, err = remoteRun("root", myceliumIP, installDockerCmds, privateKey)
 	if err != nil {
 		return err
 	}
@@ -149,13 +160,13 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	apt install -y caddy`
 
 	log.Debug().Msg("Installing caddy")
-	_, err = remoteRun("root", yggIP, installCaddyCmds, privateKey)
+	_, err = remoteRun("root", myceliumIP, installCaddyCmds, privateKey)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Str("repository", d.configs.repoURL).Msg("Cloning the repository")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && git clone %s", d.configs.repoURL), privateKey)
+	_, err = remoteRun("root", myceliumIP, fmt.Sprintf("cd /mydata && git clone %s", d.configs.repoURL), privateKey)
 	if err != nil {
 		return err
 	}
@@ -164,14 +175,14 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 	log.Debug().Str("repository name", repoName).Send()
 
 	if len(d.configs.configFilePath) != 0 {
-		log.Debug().Msg("Inserting repository d.configuration file")
+		log.Debug().Msg("Inserting repository configuration file")
 
 		repoConfig, err := os.ReadFile(d.configs.configFilePath)
 		if err != nil {
 			return err
 		}
 
-		_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/%s", repoConfig, repoName, filepath.Base(d.configs.configFilePath)), privateKey)
+		_, err = remoteRun("root", myceliumIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/%s", repoConfig, repoName, filepath.Base(d.configs.configFilePath)), privateKey)
 		if err != nil {
 			return err
 		}
@@ -191,24 +202,24 @@ func (d *Deployer) Deploy(ctx context.Context) error {
 }`, publicIP, d.configs.backendPort, d.configs.frontendPort)
 	log.Debug().Str("Caddy file content", caddyFileContent)
 
-	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/Caddyfile", caddyFileContent, repoName), privateKey)
+	_, err = remoteRun("root", myceliumIP, fmt.Sprintf("cd /mydata && echo -e '%s' >> %s/Caddyfile", caddyFileContent, repoName), privateKey)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Inserting caddy service into zinit")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "caddy run --config=/mydata/%s/Caddyfile"' >> /etc/zinit/caddy.yaml && zinit monitor caddy`, repoName), privateKey)
+	_, err = remoteRun("root", myceliumIP, fmt.Sprintf(`echo 'exec: bash -c "caddy run --config=/mydata/%s/Caddyfile"' >> /etc/zinit/caddy.yaml && zinit monitor caddy`, repoName), privateKey)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Str("repository service name", repoName).Msg("Inserting repository service into zinit")
-	_, err = remoteRun("root", yggIP, fmt.Sprintf(`echo 'exec: bash -c "cd /mydata/%s && docker compose up --force-recreate"' >> /etc/zinit/%s.yaml && zinit monitor %s`, repoName, repoName, repoName), privateKey)
+	_, err = remoteRun("root", myceliumIP, fmt.Sprintf(`echo 'exec: bash -c "cd /mydata/%s && docker compose up --force-recreate"' >> /etc/zinit/%s.yaml && zinit monitor %s`, repoName, repoName, repoName), privateKey)
 	if err != nil {
 		return err
 	}
 
-	err = d.Update(yggIP)
+	err = d.Update(myceliumIP)
 	if err != nil {
 		return err
 	}

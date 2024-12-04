@@ -11,7 +11,7 @@ import (
 
 var updateFilePath = "scripts/update.sh"
 
-func (d *Deployer) Update(yggIP string) error {
+func (d *Deployer) Update(myceliumIP string) error {
 	repoName := d.configs.repoURL[strings.LastIndex(d.configs.repoURL, "/")+1:]
 	log.Debug().Str("repository name", repoName).Send()
 
@@ -27,14 +27,14 @@ func (d *Deployer) Update(yggIP string) error {
 		return err
 	}
 
-	_, err = remoteRun("root", yggIP, fmt.Sprintf("cd /mydata/%s && echo -e '%s' >> update.sh && chmod +x update.sh", repoName, updateScript), privateKey)
+	_, err = remoteRun("root", myceliumIP, fmt.Sprintf("cd /mydata/%s && echo -e '%s' >> update.sh && chmod +x update.sh", repoName, updateScript), privateKey)
 	if err != nil {
 		return err
 	}
 
 	log.Debug().Msg("Executing update script")
 	updateCmd := fmt.Sprintf(`export REPO_NAME=%s && export BACKEND_DIR=%s && export FRONTEND_DIR=%s && /mydata/%s/update.sh`, repoName, d.configs.backendDir, d.configs.frontendDir, repoName)
-	_, err = remoteRun("root", yggIP, updateCmd, privateKey)
+	_, err = remoteRun("root", myceliumIP, updateCmd, privateKey)
 	if err != nil {
 		return err
 	}
